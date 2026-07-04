@@ -1,0 +1,196 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nellis History Scanner Dashboard</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="dashboard">
+  <header class="dash-header">
+    <div>
+      <h1>Nellis History Scanner</h1>
+      <p id="subtitle">Captured listings from the scan. Filter them after the fact.</p>
+    </div>
+    <div class="dash-actions">
+      <button id="refreshBtn" title="Reload this dashboard from local extension storage. This does not scan new pages.">Refresh</button>
+      <button id="exportBtn" title="Download the currently visible/filtered dashboard rows as CSV.">Export CSV</button>
+      <button id="receiptsBtn" title="Open the receipt importer/history tools.">Receipts</button>
+      <button id="forgetMatchesBtn" class="danger" title="Delete all captured dashboard listings. Does not delete receipt history.">Forget captured</button>
+      <button id="bulkNotWantedBtn" class="danger" title="Mark selected rows and related title patterns as not wanted.">Selected not wanted (<span id="selectedCount">0</span>)</button>
+      <button id="clearSelectionBtn" title="Uncheck all selected rows.">Clear selection</button>
+      <button id="clearNotWantedBtn" title="Remove all not-wanted rules so hidden related items can appear again.">Clear not-wanted</button>
+      <button id="stopBtn" class="danger" title="Stop the active page scanner.">Stop scan</button>
+    </div>
+  </header>
+
+  <section class="summary-grid summary-grid-six">
+    <div class="summary"><span id="pagesScanned">0</span><label>Pages</label></div>
+    <div class="summary"><span id="listingsSeen">0</span><label>Listings Seen This Run</label></div>
+    <div class="summary"><span id="matchesFound">0</span><label>Captured Listings</label></div>
+    <div class="summary"><span id="visibleMatches">0</span><label>Visible After Filters</label></div>
+    <div class="summary"><span id="notWantedCount">0</span><label>Not Wanted Rules</label></div>
+    <div class="summary"><span id="runningState">Idle</span><label>Status</label></div>
+  </section>
+
+  <section class="saved-filter-panel admin-tools-panel">
+    <div class="tag-panel-title">Admin tools <span class="muted">quiet cloud sync</span></div>
+    <div id="teamSyncStatus" class="muted column-filter-help">Checking team status...</div>
+    <div id="currentAuctionStatus" class="muted column-filter-help">Current auction group: checking...</div>
+    <div class="saved-filter-controls admin-tool-controls">
+      <button id="teamAutoSyncNowBtn" title="Run the quiet background auto-sync immediately. Useful for testing admin hide/unhide without waiting for the timer.">Auto sync now</button>
+      <button id="refreshAdminOverviewBtn" title="Admin only: reload team activity, sync counts, and bid sightings from Supabase.">Refresh admin overview</button>
+    </div>
+    <div id="adminToolControls" class="saved-filter-controls admin-tool-controls">
+      <button id="teamAdminHideSelectedBtn" class="danger" title="Admin only: hide selected listings from regular users' shared dashboards. Admins still see them.">Admin hide selected (<span id="adminSelectedCount">0</span>)</button>
+      <button id="refreshHiddenRulesBtn" title="Reload the current admin-hidden list from Supabase.">Refresh hidden list</button>
+    </div>
+    <div id="adminSelectedPreview" class="muted column-filter-help">Select dashboard rows to queue them here for admin hide.</div>
+    <div class="muted column-filter-help">Admin-hidden listings are only hidden inside regular users' dashboards. They are not changed on Nellis.</div>
+    <div id="adminHiddenRules" class="admin-hidden-rules muted">Hidden list loads for admin users.</div>
+    <div id="adminOverview" class="admin-overview muted">Admin overview loads for admin users.</div>
+    <div id="adminBidActivity" class="admin-bid-activity muted"></div>
+  </section>
+
+  <section class="toolbar toolbar-wrap">
+    <input id="searchBox" type="search" placeholder="Filter listings...">
+    <label><input id="returnedToggle" type="checkbox"> Show returned history</label>
+    <label>Quality >=
+      <input id="minQualityFilter" type="number" min="0" max="100" step="1" value="0">
+    </label>
+    <label>Tag match
+      <select id="tagMode">
+        <option value="all">All selected tags</option>
+        <option value="any">Any selected tag</option>
+      </select>
+    </label>
+    <button id="clearTagsBtn">Clear tags</button>
+    <label>Condition rating match
+      <select id="conditionMode">
+        <option value="all">All selected ratings</option>
+        <option value="any">Any selected rating</option>
+      </select>
+    </label>
+    <button id="clearConditionsBtn">Clear ratings</button>
+  </section>
+
+
+  <section class="saved-filter-panel">
+    <div class="tag-panel-title">Saved filters <span id="savedFilterCount" class="muted">0</span></div>
+    <div class="saved-filter-controls">
+      <input id="savedFilterName" type="text" placeholder="Name current filter...">
+      <button id="saveFilterBtn" title="Save the current dashboard filter setup for later.">Save current filter</button>
+      <select id="savedFilterSelect" title="Choose a saved dashboard filter to apply."><option value="">No saved filters yet</option></select>
+      <button id="applySavedFilterBtn" title="Apply the selected saved filter.">Apply</button>
+      <button id="deleteSavedFilterBtn" class="danger" title="Delete the selected saved filter.">Delete saved</button>
+      <button id="clearActiveFiltersBtn" title="Clear the currently active dashboard filters and reset sorting.">Clear active filters</button>
+    </div>
+    <div class="muted column-filter-help">Saved filters include search text, quality, tags, condition ratings, standalone/grouped column filters, and current sort.</div>
+  </section>
+
+
+
+  <section class="saved-filter-panel daily-query-panel">
+    <div class="tag-panel-title">Daily query import</div>
+    <div class="muted column-filter-help">Paste bookmark export HTML, Nellis search URLs, or plain keywords. It extracts <code>query=</code> terms and builds one OR group: Listing contains keyword1 OR keyword2 OR keyword3.</div>
+    <textarea id="dailyQueryPaste" class="daily-query-textarea" placeholder="Paste bookmarks/URLs here...
+Example: https://www.nellisauction.com/search?query=r173576
+https://www.nellisauction.com/search?query=fairtex"></textarea>
+    <div class="saved-filter-controls">
+      <input id="dailyQueryFilterName" type="text" value="Daily searches" placeholder="Saved filter name..." title="Name used when saving the extracted keyword filter.">
+      <button id="extractDailyQueryBtn" title="Read the pasted text and show the extracted query keywords.">Extract keywords</button>
+      <button id="applyDailyQueryBtn" title="Apply extracted keywords as a Listing contains OR filter group on this dashboard.">Apply to active filters</button>
+      <button id="saveDailyQueryFilterBtn" title="Save the extracted keywords as a reusable saved filter. It includes your current filters plus the imported keyword OR group.">Save as filter</button>
+      <button id="clearDailyQueryBtn" title="Clear the pasted daily query text and extracted terms. Does not delete saved filters already created.">Clear import</button>
+    </div>
+    <div id="dailyQueryStatus" class="muted column-filter-help">No daily query imported yet.</div>
+  </section>
+
+  <section class="not-wanted-panel">
+    <div class="tag-panel-title">Saved not-wanted rules</div>
+    <div class="muted column-filter-help">These are saved locally and keep related future matches hidden until you remove the rule.</div>
+    <div id="notWantedRules" class="tag-filters not-wanted-rules"></div>
+  </section>
+
+  <section class="filter-panels">
+    <section class="tag-panel">
+      <div class="tag-panel-title">Available tags</div>
+      <div id="tagFilters" class="tag-filters"></div>
+    </section>
+    <section class="tag-panel">
+      <div class="tag-panel-title">Available condition ratings</div>
+      <div id="conditionFilters" class="tag-filters"></div>
+    </section>
+  </section>
+
+
+  <section class="column-filter-panel">
+    <div class="tag-panel-title">Column filters</div>
+    <div class="column-filter-builder">
+      <select id="columnFilterField" title="Column to filter"></select>
+      <select id="columnFilterOp" title="Filter comparison"></select>
+      <input id="columnFilterValue" type="text" placeholder="Example: 3 or xyd" title="Filter value">
+      <select id="columnFilterTarget" title="Add as a standalone AND filter, or add into a saved AND/OR group."><option value="">Standalone AND filter</option></select>
+      <button id="addColumnFilterBtn" title="Add this filter row. Standalone filters are ANDed together; grouped filters use that group's ALL/ANY mode.">Add filter row</button>
+      <button id="clearColumnFiltersBtn" title="Clear all standalone column filters and filter groups.">Clear column filters</button>
+    </div>
+    <div class="column-filter-group-builder">
+      <input id="columnFilterGroupName" type="text" placeholder="Group name, e.g. Go-to products" title="Name for a reusable filter group">
+      <select id="columnFilterGroupMode" title="How rows inside this group combine">
+        <option value="any">ANY row can match (OR)</option>
+        <option value="all">ALL rows must match (AND)</option>
+      </select>
+      <button id="createColumnFilterGroupBtn" title="Create a group, then add filter rows into it using the target dropdown above.">Create filter group</button>
+    </div>
+    <div class="muted column-filter-help">Example daily-buy filter: add standalone Current &lt; 3, create a Go-to products group with ANY/OR, then add Listing contains sdfr, Listing contains fifiif, Listing contains fkfkfk into that group. Save it as a saved filter.</div>
+    <div id="columnFilters" class="column-filter-chips"></div>
+  </section>
+
+  <section class="table-performance-bar" aria-label="Dashboard paging controls">
+    <div id="renderWindowStatus" class="muted">Showing 0 rows.</div>
+    <div class="table-page-controls">
+      <button id="prevPageBtn" type="button" title="Show the previous dashboard page">Prev</button>
+      <label>Page
+        <input id="pageNumberInput" type="number" min="1" step="1" value="1" title="Jump to a dashboard page">
+      </label>
+      <span id="pageCountLabel" class="muted">of 1</span>
+      <button id="nextPageBtn" type="button" title="Show the next dashboard page">Next</button>
+      <label>Rows
+        <select id="pageSizeSelect" title="Rows rendered at one time. Smaller is faster.">
+          <option value="100">100</option>
+          <option value="250" selected>250</option>
+          <option value="500">500</option>
+          <option value="1000">1000</option>
+        </select>
+      </label>
+    </div>
+  </section>
+
+  <main class="table-wrap">
+    <table id="matchesTable">
+      <thead>
+        <tr>
+          <th class="select-col" title="Select rows. Shift-click checkboxes to select a range."><input id="selectAllRows" type="checkbox" title="Select all visible rows"></th>
+          <th data-sort="score" title="Rank/score. Click to sort. Shift-click other columns for multi-sort. Right-click for a column filter.">Rank</th>
+          <th data-sort="imageUrl" title="Thumbnail image. Click to sort by image presence. Right-click for a filter.">Image</th>
+          <th data-sort="purchaseCount" title="Repeat count from receipt history. Click to sort. Right-click for a filter.">Repeat</th>
+          <th data-sort="currentPrice" title="Current price. Click to sort. Right-click for filters like < 20.">Current</th>
+          <th data-sort="estRetail" title="Estimated retail. Click to sort. Right-click for filters.">Retail</th>
+          <th data-sort="bids" title="Bid count. Click to sort. Right-click for filters like < 3.">Bids</th>
+          <th data-sort="userBidStatus" title="Your bid status if Nellis shows it. Green = bid active/winning, red = losing/outbid.">Bid Status</th>
+          <th data-sort="auctionGroupKey" title="Our auction group: pickup location plus closing date/time. Useful for separating today/tomorrow batches.">Auction</th>
+          <th data-sort="title" title="Listing title. Click header to sort. Right-click header for filters. Click a listing to open it in a separate item window; Ctrl/middle-click keeps normal browser behavior.">Listing</th>
+          <th data-sort="conditionRating" title="0-5 star condition rating captured from Nellis stars.">Condition</th>
+          <th data-sort="itemTags" title="Pink item tags such as used, major damage, missing parts.">Tags</th>
+          <th data-sort="quality" title="Receipt-history title match quality. 0/none means no history match.">Quality</th>
+          <th data-sort="lastSeenAt" title="Last time this listing was seen/refreshed by a scan.">Last Modified</th>
+          <th title="Row actions such as Not wanted.">Action</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </main>
+
+  <script src="common.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nellis Receipt Downloader</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="dashboard receipts-page">
+  <header class="dash-header">
+    <div>
+      <h1>Nellis Receipt Downloader</h1>
+      <p id="subtitle">Uses your active Nellis login. No cookie pasting. Civilization advances. <strong>v2.0.8</strong></p>
+    </div>
+    <div class="dash-actions">
+      <button id="openReceiptsBtn">Open Nellis Receipts</button>
+      <button id="exportBtn">Export CSV</button>
+      <button id="debugBtn">Export Debug</button>
+      <button id="useHistoryBtn">Use as Scanner History</button>
+      <button id="stopBtn" class="danger">Stop</button>
+    </div>
+  </header>
+
+  <section class="summary-grid">
+    <div class="summary"><span id="receiptPages">0</span><label>Pages</label></div>
+    <div class="summary"><span id="receiptCount">0</span><label>Receipts</label></div>
+    <div class="summary"><span id="itemCount">0</span><label>Items</label></div>
+    <div class="summary"><span id="failedCount">0</span><label>Failed</label></div>
+  </section>
+
+  <section class="card settings-card">
+    <h2>Download settings</h2>
+    <div class="settings-row">
+      <label>Speed
+        <select id="receiptSpeedMode">
+          <option value="normal">Normal user</option>
+          <option value="super">Super user</option>
+        </select>
+      </label>
+      <label>Max receipt pages
+        <input id="receiptMaxPages" type="number" min="1" max="500" step="1">
+      </label>
+      <label>Details
+        <select id="receiptDetailMode">
+          <option value="liveTabs">Live tab parser (recommended)</option>
+          <option value="rawFetch">Raw fetch parser (fallback)</option>
+          <option value="listOnly">List receipts only</option>
+        </select>
+      </label>
+      <button id="startBtn" class="primary">Start download</button>
+      <button id="clearBtn" class="danger">Clear receipt data</button>
+    </div>
+    <p class="muted" id="statusText">Idle.</p>
+  </section>
+
+  <section class="toolbar">
+    <input id="searchBox" type="search" placeholder="Filter receipt rows...">
+    <label><input id="failedToggle" type="checkbox"> Show failed receipts only</label>
+  </section>
+
+  <main class="table-wrap">
+    <table id="receiptTable">
+      <thead>
+        <tr>
+          <th data-sort="receiptNumber">Receipt</th>
+          <th data-sort="invoiceDate">Date</th>
+          <th data-sort="location">Location</th>
+          <th data-sort="refunded">Refunded</th>
+          <th data-sort="price">Price</th>
+          <th data-sort="productName">Product Name</th>
+          <th data-sort="inventoryNumber">Inventory #</th>
+          <th data-sort="status">Status</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </main>
+
+  <script src="common.js"></script>
+  <script src="receipts.js"></script>
+</body>
+</html>

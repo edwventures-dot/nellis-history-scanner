@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Nellis History Scanner</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="popup">
+  <header>
+    <h1>Nellis Scanner</h1>
+    <p>Capture everything first. Filter later. <strong>v4.1.0</strong></p>
+  </header>
+
+  <section class="card">
+    <h2>1. Purchase history / receipts</h2>
+    <label class="file-label">
+      <span>Import purchase CSV</span>
+      <input id="csvFile" type="file" accept=".csv,text/csv">
+    </label>
+    <button id="importBtn" class="wide">Import selected CSV</button>
+    <button id="receiptBtn" class="wide">Download receipts from Nellis</button>
+    <div id="importStatus" class="muted">Purchase history is optional. Without it, quality shows as none.</div>
+  </section>
+
+  <section class="card compact">
+    <h2>2. Scan settings</h2>
+    <label>
+      Speed
+      <select id="speedMode">
+        <option value="normal">Normal user</option>
+        <option value="super">Super user</option>
+      </select>
+    </label>
+    <label>
+      Max pages safety stop
+      <input id="maxPages" type="text" inputmode="numeric" pattern="[0-9]*" placeholder="100">
+    </label>
+  </section>
+
+  <section class="card team-sync-card">
+    <h2>Cloud login</h2>
+    <div class="muted">Auto sync is two-way and quiet: new listings once, then price/bid changes only.</div>
+    <label>
+      Email
+      <input id="teamEmail" type="email" placeholder="you@example.com" autocomplete="username">
+    </label>
+    <label>
+      Password
+      <input id="teamPassword" type="password" placeholder="Supabase user password" autocomplete="current-password">
+    </label>
+    <label>
+      Device name
+      <input id="teamDeviceName" type="text" placeholder="Trey laptop">
+    </label>
+    <div class="buttons team-buttons">
+      <button id="teamSignInBtn" class="primary">Sign in</button>
+      <button id="teamSignOutBtn">Sign out</button>
+      <button id="teamAutoSyncNowBtn" title="Run the quiet background auto-sync immediately for testing.">Auto sync now</button>
+    </div>
+    <div id="teamStatus" class="muted">Not signed in.</div>
+  </section>
+
+
+  <section class="buttons">
+    <button id="startBtn" class="primary">Start scan</button>
+    <button id="stopBtn">Stop</button>
+    <button id="dashboardBtn">Dashboard</button>
+    <button id="clearBtn" class="danger">Forget captured</button>
+  </section>
+
+  <section class="card status-card">
+    <div id="runStatus">Idle</div>
+    <div id="runCounts" class="muted"></div>
+  </section>
+
+  <script src="common.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>
