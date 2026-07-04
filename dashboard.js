@@ -23,7 +23,7 @@ let currentPage = 1;
 let pageSize = 250;
 let lastFilteredRows = [];
 let currentAuction = null;
-let currentAuctionOnly = true;
+let currentAuctionOnly = false;
 let adminOverviewBusy = false;
 let lastAdminOverviewLoadedAt = 0;
 
@@ -172,12 +172,7 @@ function isNotWanted(row) {
 }
 
 function visibleBaseRows() {
-  const activeGroup = currentAuctionOnly && currentAuction ? String(currentAuction.groupKey || '') : '';
-  return rows.filter(r => {
-    if (isNotWanted(r)) return false;
-    if (activeGroup) return String(r.auctionGroupKey || '') === activeGroup;
-    return true;
-  });
+  return rows.filter(r => !isNotWanted(r));
 }
 
 function rowMatchesSelectedTags(row) {
@@ -1166,8 +1161,10 @@ function render() {
 async function refresh() {
   const data = await chrome.storage.local.get([C.STORAGE_KEYS.MATCHES, C.STORAGE_KEYS.SCAN_STATE, C.STORAGE_KEYS.NOT_WANTED, C.STORAGE_KEYS.SAVED_FILTERS, C.STORAGE_KEYS.TEAM_CURRENT_AUCTION, C.STORAGE_KEYS.SETTINGS]);
   const settings = { ...C.DEFAULT_SETTINGS, ...(data[C.STORAGE_KEYS.SETTINGS] || {}) };
-  currentAuctionOnly = settings.teamCurrentAuctionOnly !== false;
+  currentAuctionOnly = false;
   currentAuction = data[C.STORAGE_KEYS.TEAM_CURRENT_AUCTION] || null;
+  const versionBadge = document.getElementById('appVersionBadge');
+  if (versionBadge) versionBadge.textContent = `v${C.APP_VERSION || 'unknown'}`;
   rows = (data[C.STORAGE_KEYS.MATCHES] || []).map(r => ({
     ...r,
     lastSeenAt: r.lastSeenAt || r.lastModifiedAt || r.foundAt || '',
@@ -1335,17 +1332,22 @@ function renderAdminHiddenRules() {
 function renderCurrentAuctionStatus() {
   const host = document.getElementById('currentAuctionStatus');
   if (!host) return;
-  if (!currentAuctionOnly) {
-    host.textContent = 'Current auction group filter is off.';
-    return;
+  const groups = new Map();
+  const now = Date.now();
+  for (const row of rows || []) {
+    const key = String(row.auctionGroupKey || '').trim();
+    if (!key) continue;
+    const closeMs = Date.parse(row.auctionClosesAt || '') || 0;
+    if (closeMs && closeMs < now) continue;
+    const existing = groups.get(key) || { key, count: 0, location: row.auctionLocation || row.locationName || '', closesAt: row.auctionClosesAt || '', closesRaw: row.auctionClosesRaw || '' };
+    existing.count++;
+    groups.set(key, existing);
   }
-  if (!currentAuction || !currentAuction.groupKey) {
-    host.textContent = 'Current auction group: not detected yet. Scan a current page or let cloud sync pull the latest group.';
-    return;
-  }
-  const loc = currentAuction.location || 'Unknown pickup';
-  const close = currentAuction.closesAt ? formatDate(currentAuction.closesAt) : (currentAuction.closesRaw || 'unknown close');
-  host.innerHTML = `Current auction group: <strong>${escapeHtml(loc)}</strong> <span class="muted">${escapeHtml(close)}</span>`;
+  const parts = Array.from(groups.values())
+    .sort((a, b) => (a.location || '').localeCompare(b.location || '') || (Date.parse(a.closesAt || '') || 0) - (Date.parse(b.closesAt || '') || 0))
+    .slice(0, 6)
+    .map(g => `${escapeHtml(g.location || 'Unknown pickup')} ${escapeHtml(g.closesAt ? formatDate(g.closesAt) : (g.closesRaw || ''))} (${Number(g.count || 0).toLocaleString()})`);
+  host.innerHTML = `Auction sync mode: <strong>all active auction groups</strong>${parts.length ? `<br><span class="muted">${parts.join(' · ')}</span>` : ''}`;
 }
 
 function renderAdminOverview(data) {
@@ -1572,12 +1574,13 @@ async function teamSyncFromDashboard() {
 async function teamAutoSyncNowFromDashboard() {
   try {
     teamSyncBusy = true;
-    setTeamSyncStatus('Running quiet auto sync now...');
+    setTeamSyncStatus('Running full active-auctions sync now...');
     const response = await chrome.runtime.sendMessage({
       type: 'TEAM_SILENT_SYNC_NOW',
       reason: 'dashboard-button',
       forceReconcile: true,
-      restoreMissing: true
+      restoreMissing: true,
+      forceFullPull: true
     });
     if (!response || response.ok === false) throw new Error(response?.error || 'Auto sync failed.');
     const result = response.result || {};

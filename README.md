@@ -1,4 +1,4 @@
-# Nellis History Scanner v4.1.0
+# Nellis History Scanner v4.1.1
 
 - Fixes pickup location detection for Nellis cards where the location is only shown next to the map-pin icon, like `Katy`.
 - Accepts relative countdown values such as `14 hours` from the `Time Left` box and converts them into an approximate close date for auction grouping.
@@ -330,38 +330,12 @@ This release is intentionally MVP-level:
 
 Adds auction group identity based on pickup location + auction closing date/time. Run `supabase_auction_identity_v407.sql` in Supabase SQL Editor before relying on sync for this version. Existing rows are backfilled as they are scanned/pushed again.
 
-## v4.1.0 - Current auction mode + admin overview
+## v4.1.1 - Active auction mode + extension version badge
 
-- Adds current-auction mode for the shared dashboard.
+- Adds active-auction mode for the shared dashboard.
 - The active auction is detected from the dominant scanned auction group: pickup location + auction close date/time.
 - When a new auction group is detected, local shared rows from the old auction group are pruned from the normal dashboard.
 - Background pull sync now asks Supabase for only the current auction group once one is known.
-- If another machine scans a newer auction group, quiet polling can switch clients to that new group and do a fresh current-auction pull.
+- If another machine scans a newer auction group, quiet polling can switch clients to that new group and do a fresh active-auction pull.
 - Adds an admin overview in the dashboard showing users, devices, pushed/new/updated/skipped/pulled counts, hidden pruned/restored counts, and bid sightings captured during scans.
 - Bid sightings use Nellis bid status seen on the card and show the visible bid/current price amount when an exact personal bid amount is not available.
-
-
-## GitHub / distribution
-
-This repo is the source for the desktop Chrome/Edge extension.
-
-To distribute the latest build, create a GitHub Release and attach a zip asset named exactly:
-
-```text
-nellis-history-scanner.zip
-```
-
-The Nellis Mobile app links to:
-
-```text
-https://github.com/edwventures-dot/nellis-history-scanner/releases/latest/download/nellis-history-scanner.zip
-```
-
-Chrome install flow for users:
-
-1. Download the zip.
-2. Extract it.
-3. Open `chrome://extensions`.
-4. Enable Developer mode.
-5. Click Load unpacked.
-6. Select the extracted extension folder.

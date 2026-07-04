@@ -19,7 +19,7 @@
     INTERNAL_BACKUPS: 'internalBackups'
   };
 
-  const APP_VERSION = '4.1.0';
+  const APP_VERSION = '4.1.1';
   const BACKUP_FORMAT_VERSION = 1;
 
   const DEFAULT_SETTINGS = {
@@ -35,7 +35,8 @@
     teamAutoPushAfterScan: true,
     teamAutoPullMinutes: 2,
     teamVisibleReconcileMinutes: 2,
-    teamCurrentAuctionOnly: true,
+    teamCurrentAuctionOnly: false,
+    teamActiveAuctionsOnly: true,
     teamDeviceName: ''
   };
 
@@ -967,13 +968,18 @@
     const since = options && options.since ? String(options.since) : '';
     const settingsData = await chrome.storage.local.get(STORAGE_KEYS.SETTINGS);
     const settings = { ...DEFAULT_SETTINGS, ...(settingsData[STORAGE_KEYS.SETTINGS] || {}) };
-    const currentAuction = options && Object.prototype.hasOwnProperty.call(options, 'auctionGroupKey')
-      ? { groupKey: options.auctionGroupKey || '' }
-      : await teamResolveCurrentAuction(settings);
-    const auctionGroupKey = currentAuction?.groupKey || '';
+    // v4.1.1: do not automatically collapse sync to one "current" auction group.
+    // Nellis can have several active auction/location/date groups at the same time.
+    // By default pull all active/unended auction groups, and only use a single group
+    // when the caller explicitly asks for one.
+    const auctionGroupKey = options && options.auctionGroupKey ? String(options.auctionGroupKey) : '';
+    const activeOnly = options && Object.prototype.hasOwnProperty.call(options, 'activeOnly')
+      ? !!options.activeOnly
+      : settings.teamActiveAuctionsOnly !== false;
     const filters = [];
     if (since) filters.push(`updated_at=gt.${encodeURIComponent(since)}`);
     if (auctionGroupKey) filters.push(`auction_group_key=eq.${encodeURIComponent(auctionGroupKey)}`);
+    if (activeOnly && !auctionGroupKey) filters.push(`auction_closes_at=gte.${encodeURIComponent(teamNowIso())}`);
     const filter = filters.length ? `&${filters.join('&')}` : '';
     const order = since ? 'updated_at.asc,id.asc' : 'last_seen_at.desc,id.asc';
 
@@ -1041,33 +1047,38 @@
     return merged;
   }
 
-  async function teamPullChangedListings(deviceName = '') {
+  async function teamPullChangedListings(deviceName = '', options = {}) {
     const data = await chrome.storage.local.get([STORAGE_KEYS.TEAM_SYNC_STATE, STORAGE_KEYS.SETTINGS]);
     const sync = data[STORAGE_KEYS.TEAM_SYNC_STATE] || {};
     const settings = { ...DEFAULT_SETTINGS, ...(data[STORAGE_KEYS.SETTINGS] || {}) };
-    const currentAuction = await teamResolveCurrentAuction(settings);
-    const auctionGroupKey = currentAuction?.groupKey || '';
-    const auctionChanged = !!auctionGroupKey && sync.currentAuctionGroupKey !== auctionGroupKey;
-    const since = auctionChanged ? '' : (sync.lastPullAt || '');
+    const activeOnly = settings.teamActiveAuctionsOnly !== false;
+    const activeModeChanged = !!sync.currentAuctionGroupKey || /current-auction/i.test(String(sync.autoPullMode || ''));
     const pullStartedAt = teamNowIso();
+    const lastFull = Date.parse(sync.lastActiveFullPullAt || '') || 0;
+    const fullDue = activeOnly && (!lastFull || Date.now() - lastFull > 10 * 60 * 1000);
+    const forceFullPull = !!options.forceFullPull || activeModeChanged || fullDue;
+    const since = forceFullPull ? '' : (sync.lastPullAt || '');
     const initialFullPull = !since;
 
-    const pulled = await teamPullListings(100000, 1000, initialFullPull ? { auctionGroupKey } : { since, auctionGroupKey });
-    const merged = (pulled.length || initialFullPull || auctionChanged) ? await teamMergeRowsIntoLocal(pulled, { pruneMissingShared: !!auctionGroupKey || initialFullPull }) : null;
+    const pulled = await teamPullListings(100000, 1000, { since, activeOnly });
+    const merged = (pulled.length || initialFullPull || forceFullPull) ? await teamMergeRowsIntoLocal(pulled, { pruneMissingShared: activeOnly || initialFullPull || forceFullPull }) : null;
     const next = {
       ...sync,
       pulledChanged: initialFullPull ? 0 : pulled.length,
       pulledInitial: initialFullPull ? pulled.length : sync.pulledInitial,
-      currentAuctionGroupKey: auctionGroupKey || sync.currentAuctionGroupKey || '',
-      currentAuctionLabel: currentAuction ? `${currentAuction.location || ''} ${currentAuction.closesAt || currentAuction.closesRaw || ''}`.trim() : (sync.currentAuctionLabel || ''),
+      currentAuctionGroupKey: '',
+      currentAuctionLabel: activeOnly ? 'All active auction groups' : 'All shared listings',
+      activeAuctionMode: activeOnly,
+      autoPullMode: initialFullPull ? (activeOnly ? 'active-auctions-full' : 'all-full') : 'changed',
       prunedHidden: merged?.teamPruned || 0,
       localTotal: merged ? merged.length : sync.localTotal,
       lastPullAt: pullStartedAt,
+      lastActiveFullPullAt: initialFullPull || forceFullPull ? pullStartedAt : sync.lastActiveFullPullAt,
       syncedAt: pullStartedAt,
       deviceName: deviceName || sync.deviceName || ''
     };
     await chrome.storage.local.set({ [STORAGE_KEYS.TEAM_SYNC_STATE]: next });
-    return { pulled: pulled.length, localTotal: merged ? merged.length : next.localTotal, pruned: merged?.teamPruned || 0, initialFullPull, syncedAt: pullStartedAt, currentAuctionGroupKey: auctionGroupKey || '' };
+    return { pulled: pulled.length, localTotal: merged ? merged.length : next.localTotal, pruned: merged?.teamPruned || 0, initialFullPull, syncedAt: pullStartedAt, currentAuctionGroupKey: '', activeOnly };
   }
 
   async function teamSyncListings(localRows, deviceName = '') {

@@ -8,7 +8,7 @@
 <body class="dashboard">
   <header class="dash-header">
     <div>
-      <h1>Nellis History Scanner</h1>
+      <h1>Nellis History Scanner <span id="appVersionBadge" class="version-badge">v</span></h1>
       <p id="subtitle">Captured listings from the scan. Filter them after the fact.</p>
     </div>
     <div class="dash-actions">
@@ -26,7 +26,7 @@
   <section class="summary-grid summary-grid-six">
     <div class="summary"><span id="pagesScanned">0</span><label>Pages</label></div>
     <div class="summary"><span id="listingsSeen">0</span><label>Listings Seen This Run</label></div>
-    <div class="summary"><span id="matchesFound">0</span><label>Captured Listings</label></div>
+    <div class="summary"><span id="matchesFound">0</span><label>Local Active Listings</label></div>
     <div class="summary"><span id="visibleMatches">0</span><label>Visible After Filters</label></div>
     <div class="summary"><span id="notWantedCount">0</span><label>Not Wanted Rules</label></div>
     <div class="summary"><span id="runningState">Idle</span><label>Status</label></div>
@@ -35,7 +35,7 @@
   <section class="saved-filter-panel admin-tools-panel">
     <div class="tag-panel-title">Admin tools <span class="muted">quiet cloud sync</span></div>
     <div id="teamSyncStatus" class="muted column-filter-help">Checking team status...</div>
-    <div id="currentAuctionStatus" class="muted column-filter-help">Current auction group: checking...</div>
+    <div id="currentAuctionStatus" class="muted column-filter-help">Auction sync mode: checking active groups...</div>
     <div class="saved-filter-controls admin-tool-controls">
       <button id="teamAutoSyncNowBtn" title="Run the quiet background auto-sync immediately. Useful for testing admin hide/unhide without waiting for the timer.">Auto sync now</button>
       <button id="refreshAdminOverviewBtn" title="Admin only: reload team activity, sync counts, and bid sightings from Supabase.">Refresh admin overview</button>

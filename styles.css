@@ -22,6 +22,7 @@ input, select { border: 1px solid var(--border); border-radius: 8px; padding: 7p
 a { color: var(--primary); text-decoration: none; }
 a:hover { text-decoration: underline; }
 h1 { margin: 0 0 4px; font-size: 20px; }
+.version-badge { display: inline-block; margin-left: 8px; padding: 2px 7px; border: 1px solid var(--border); border-radius: 999px; background: #fff; color: var(--muted); font-size: 12px; font-weight: 700; vertical-align: middle; }
 h2 { margin: 0 0 8px; font-size: 14px; }
 p { margin: 0; }
 .muted { color: var(--muted); font-size: 12px; }
@@ -334,7 +335,7 @@ th.filtered { box-shadow: inset 0 -3px 0 #571421; }
 .auction-cell { min-width: 130px; max-width: 190px; line-height: 1.25; }
 .auction-cell b { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 
-/* v4.1.0 admin overview + current auction mode */
+/* v4.1.1 admin overview + active auction mode */
 .admin-overview,
 .admin-bid-activity { margin-top: 12px; }
 .admin-overview-summary {

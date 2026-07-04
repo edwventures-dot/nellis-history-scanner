@@ -1,4 +1,6 @@
 const C = window.NellisCommon;
+const versionBadge = document.getElementById('popupVersionBadge');
+if (versionBadge) versionBadge.textContent = `v${C.APP_VERSION || 'unknown'}`;
 let selectedCsvFile = null;
 let importingCsv = false;
 let selectedBackupFile = null;
@@ -106,7 +108,8 @@ async function teamAutoSyncNowFromPopup() {
       type: 'TEAM_SILENT_SYNC_NOW',
       reason: 'popup-button',
       forceReconcile: true,
-      restoreMissing: true
+      restoreMissing: true,
+      forceFullPull: true
     });
     if (!response || response.ok === false) throw new Error(response?.error || 'Auto sync failed.');
     const result = response.result || {};

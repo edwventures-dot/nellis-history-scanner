@@ -25,7 +25,8 @@ const DEFAULT_SETTINGS = {
   teamAutoPushAfterScan: true,
   teamAutoPullMinutes: 2,
   teamVisibleReconcileMinutes: 2,
-  teamCurrentAuctionOnly: true,
+  teamCurrentAuctionOnly: false,
+  teamActiveAuctionsOnly: true,
   teamDeviceName: ''
 };
 
@@ -752,13 +753,14 @@ function teamMergeLiveFields(old, row) {
   };
 }
 
-async function teamFetchListingPages({ since = '', select = '*', order = '', maxRows = 100000, auctionGroupKey = '' } = {}) {
+async function teamFetchListingPages({ since = '', select = '*', order = '', maxRows = 100000, auctionGroupKey = '', activeOnly = false } = {}) {
   const all = [];
   const selected = encodeURIComponent(select || '*');
   const orderBy = encodeURIComponent(order || (since ? 'updated_at.asc,id.asc' : 'last_seen_at.desc,id.asc'));
   const filters = [];
   if (since) filters.push(`updated_at=gt.${encodeURIComponent(since)}`);
   if (auctionGroupKey) filters.push(`auction_group_key=eq.${encodeURIComponent(auctionGroupKey)}`);
+  if (activeOnly && !auctionGroupKey) filters.push(`auction_closes_at=gte.${encodeURIComponent(teamNowIso())}`);
   const filter = filters.length ? `&${filters.join('&')}` : '';
   let truncated = false;
 
@@ -826,9 +828,8 @@ async function teamReconcileVisibleRows(sync, settings, options = {}) {
   }
 
   const pullStartedAt = teamNowIso();
-  const currentAuction = await teamResolveCurrentAuction(settings);
-  const auctionGroupKey = currentAuction?.groupKey || '';
-  const { rows, truncated } = await teamFetchListingPages({ select: 'url,updated_at,auction_group_key', order: 'updated_at.asc,id.asc', maxRows: 100000, auctionGroupKey });
+  const activeOnly = settings.teamActiveAuctionsOnly !== false;
+  const { rows, truncated } = await teamFetchListingPages({ select: 'url,updated_at,auction_group_key', order: 'updated_at.asc,id.asc', maxRows: 100000, activeOnly });
   if (truncated) return { pruned: 0, restored: 0, skipped: true, reason: 'visible set too large' };
 
   const visibleUrls = new Set(rows.map(r => displayText(r.url)).filter(Boolean));
@@ -886,7 +887,7 @@ async function teamReconcileVisibleRows(sync, settings, options = {}) {
   return { pruned, restored, restoredSkipped, localTotal, syncedAt: pullStartedAt };
 }
 
-async function teamPullChangedListings() {
+async function teamPullChangedListings(options = {}) {
   const session = await teamGetSession();
   if (!session?.user?.id) return { pulled: 0, reason: 'not signed in' };
   const settingsData = await chrome.storage.local.get(K.SETTINGS);
@@ -895,28 +896,32 @@ async function teamPullChangedListings() {
 
   const syncData = await chrome.storage.local.get(K.TEAM_SYNC_STATE);
   const sync = syncData[K.TEAM_SYNC_STATE] || {};
-  const currentAuction = await teamResolveCurrentAuction(settings);
-  const auctionGroupKey = currentAuction?.groupKey || '';
-  const auctionChanged = !!auctionGroupKey && sync.currentAuctionGroupKey !== auctionGroupKey;
-  const since = auctionChanged ? '' : (sync.lastPullAt || '');
+  const activeOnly = settings.teamActiveAuctionsOnly !== false;
+  const activeModeChanged = !!sync.currentAuctionGroupKey || /current-auction/i.test(String(sync.autoPullMode || ''));
   const pullStartedAt = teamNowIso();
+  const lastFull = Date.parse(sync.lastActiveFullPullAt || '') || 0;
+  const fullDue = activeOnly && (!lastFull || Date.now() - lastFull > 10 * 60 * 1000);
+  const forceFullPull = !!options.forceFullPull || activeModeChanged || fullDue;
+  const since = forceFullPull ? '' : (sync.lastPullAt || '');
   const initialFullPull = !since;
-  const { rows: all } = await teamFetchListingPages({ since, select: '*', order: since ? 'updated_at.asc,id.asc' : 'last_seen_at.desc,id.asc', maxRows: 100000, auctionGroupKey });
-  const merge = (all.length || initialFullPull || auctionChanged) ? await teamMergeRemoteRowsIntoLocal(all, { pruneMissingShared: !!auctionGroupKey || initialFullPull }) : { localTotal: sync.localTotal, pruned: 0 };
+  const { rows: all } = await teamFetchListingPages({ since, select: '*', order: since ? 'updated_at.asc,id.asc' : 'last_seen_at.desc,id.asc', maxRows: 100000, activeOnly });
+  const merge = (all.length || initialFullPull || forceFullPull) ? await teamMergeRemoteRowsIntoLocal(all, { pruneMissingShared: activeOnly || initialFullPull || forceFullPull }) : { localTotal: sync.localTotal, pruned: 0 };
 
   const next = {
     ...sync,
     autoPulled: all.length,
-    autoPullMode: initialFullPull ? (auctionGroupKey ? 'current-auction-full' : 'initial-full') : 'changed',
-    currentAuctionGroupKey: auctionGroupKey || sync.currentAuctionGroupKey || '',
-    currentAuctionLabel: currentAuction ? `${currentAuction.location || ''} ${currentAuction.closesAt || currentAuction.closesRaw || ''}`.trim() : (sync.currentAuctionLabel || ''),
+    autoPullMode: initialFullPull ? (activeOnly ? 'active-auctions-full' : 'all-full') : 'changed',
+    currentAuctionGroupKey: '',
+    currentAuctionLabel: activeOnly ? 'All active auction groups' : 'All shared listings',
+    activeAuctionMode: activeOnly,
     prunedHidden: merge.pruned || 0,
     localTotal: merge.localTotal,
     lastPullAt: pullStartedAt,
+    lastActiveFullPullAt: initialFullPull || forceFullPull ? pullStartedAt : sync.lastActiveFullPullAt,
     syncedAt: pullStartedAt
   };
   await chrome.storage.local.set({ [K.TEAM_SYNC_STATE]: next });
-  return { pulled: all.length, pruned: merge.pruned || 0, initialFullPull, localTotal: merge.localTotal, syncedAt: pullStartedAt, currentAuctionGroupKey: auctionGroupKey || '' };
+  return { pulled: all.length, pruned: merge.pruned || 0, initialFullPull, localTotal: merge.localTotal, syncedAt: pullStartedAt, currentAuctionGroupKey: '', activeOnly };
 }
 
 async function teamSilentAutoSync(reason = 'alarm', options = {}) {
@@ -928,7 +933,7 @@ async function teamSilentAutoSync(reason = 'alarm', options = {}) {
     // only the rows they just saw. The alarm pulls server-side changes and
     // occasionally reconciles visible rows so admin-hidden listings disappear
     // from regular-user dashboards.
-    const pull = await teamPullChangedListings();
+    const pull = await teamPullChangedListings({ forceFullPull: !!options.forceFullPull });
     const latest = await chrome.storage.local.get(K.TEAM_SYNC_STATE);
     const reconcile = await teamReconcileVisibleRows(latest[K.TEAM_SYNC_STATE] || {}, settings, { force: !!options.forceReconcile, restoreMissing: options.restoreMissing !== false, restoreLimit: options.restoreLimit || (options.forceReconcile ? 250 : 50) }).catch(err => ({ pruned: 0, restored: 0, error: err.message || String(err) }));
     const now = teamNowIso();
@@ -940,7 +945,7 @@ async function teamSilentAutoSync(reason = 'alarm', options = {}) {
       await teamRequest('/rest/v1/nhs_sync_log', {
         method: 'POST',
         headers: { Prefer: 'return=minimal' },
-        body: [{ user_id: session.user.id, device_name: settings.teamDeviceName || 'background', action: 'auto-pull-listings', item_count: Number(pull?.pulled || 0), details: { pulled: pull?.pulled || 0, pruned: reconcile?.pruned || 0, restored: reconcile?.restored || 0, reason, currentAuctionGroupKey: pull?.currentAuctionGroupKey || (prev[K.TEAM_SYNC_STATE] || {}).currentAuctionGroupKey || '' } }]
+        body: [{ user_id: session.user.id, device_name: settings.teamDeviceName || 'background', action: 'auto-pull-listings', item_count: Number(pull?.pulled || 0), details: { pulled: pull?.pulled || 0, pruned: reconcile?.pruned || 0, restored: reconcile?.restored || 0, reason, currentAuctionGroupKey: '', activeOnly: !!pull?.activeOnly } }]
       }).catch(() => {});
     }
     return { pull, reconcile, reason };
@@ -989,7 +994,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (message.type === 'PAGE_SCANNED') {
         const auctionSwitch = await teamSetCurrentAuctionFromRows(message.matches || [], 'scan-page').catch(() => null);
         const merged = await mergeMatches(message.matches || []);
-        if (auctionSwitch?.current?.groupKey) await teamPruneLocalToAuctionGroup(auctionSwitch.current.groupKey).catch(() => null);
         const teamSync = await teamDirtyPushRows(message.matches || [], 'scan-page');
         const state = await getState();
         const seen = Array.from(new Set([...(state.seenFingerprints || []), message.fingerprint].filter(Boolean))).slice(-50);
@@ -998,7 +1002,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
           listingsSeen: Number(state.listingsSeen || 0) + Number(message.listingsSeen || 0),
           matchesFound: merged.length,
           currentUrl: message.url || state.currentUrl,
-          lastMessage: (message.lastMessage || `Scanned page ${Number(state.pagesScanned || 0) + 1}`) + (auctionSwitch?.changed ? ' New auction group detected.' : '') + (teamSync && teamSync.pushed ? ` Team sync pushed ${teamSync.pushed}.` : ''),
+          lastMessage: (message.lastMessage || `Scanned page ${Number(state.pagesScanned || 0) + 1}`) + (auctionSwitch?.changed ? ' Auction group detected.' : '') + (teamSync && teamSync.pushed ? ` Team sync pushed ${teamSync.pushed}.` : ''),
           seenFingerprints: seen
         });
         sendResponse({ ok: true, state: next, totalMatches: merged.length });
