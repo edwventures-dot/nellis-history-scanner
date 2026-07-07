@@ -1,3 +1,14 @@
+# Nellis History Scanner v4.1.3
+
+- Fixes wrapped/sidebar event parsing so `Daily Auction - Katy - Jul 6th` and `Daily Auction - SW Houston - Jul 6th` stay separate.
+- Keeps event grouping stable even when the Nellis sidebar wraps an event name across lines.
+
+# Nellis History Scanner v4.1.2
+
+- Captures Nellis **Event Name** values from the search filter sidebar, such as `Daily Auction - Katy - Jul 6th`.
+- Uses event names as the shared auction group key when available, instead of guessing from pickup location plus close date.
+- Blocks long product titles from being mistaken for pickup locations when reading the map-pin area.
+
 # Nellis History Scanner v4.1.1
 
 - Fixes pickup location detection for Nellis cards where the location is only shown next to the map-pin icon, like `Katy`.
@@ -329,6 +340,18 @@ This release is intentionally MVP-level:
 ## v4.0.8 - Auction Identity
 
 Adds auction group identity based on pickup location + auction closing date/time. Run `supabase_auction_identity_v407.sql` in Supabase SQL Editor before relying on sync for this version. Existing rows are backfilled as they are scanned/pushed again.
+
+## v4.1.3 - Event-name parser fix
+
+- Keeps multiple Nellis sidebar event names separate even when the sidebar wraps text.
+- Prevents combined labels like `Daily Auction - Katy - Jul 6th ... Daily Auction - SW Houston - Jul 6th`.
+
+## v4.1.2 - Nellis event-name grouping
+
+- Captures Nellis sidebar **Event Name** filters during search-page scans.
+- Uses event names as the stable shared group key when available.
+- Keeps pickup location as listing metadata, but no longer depends on location plus close date to identify the event.
+- Adds product-title guards so a listing title is not mistaken for a pickup location/event label.
 
 ## v4.1.1 - Active auction mode + extension version badge
 

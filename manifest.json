@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Nellis History Scanner",
-  "version": "4.1.1",
-  "description": "Nellis buying database with quiet active-auction Supabase sync, admin hide tools, admin activity dashboard, and fast paged dashboard rendering.",
+  "version": "4.1.3",
+  "description": "Nellis buying database with fixed Nellis event-name grouping, quiet active-auction Supabase sync, admin hide tools, admin activity dashboard, and fast paged dashboard rendering.",
   "permissions": [
     "storage",
     "tabs",
