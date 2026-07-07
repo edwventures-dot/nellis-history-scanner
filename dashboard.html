@@ -43,6 +43,7 @@
     <div id="adminToolControls" class="saved-filter-controls admin-tool-controls">
       <button id="teamAdminHideSelectedBtn" class="danger" title="Admin only: hide selected listings from regular users' shared dashboards. Admins still see them.">Admin hide selected (<span id="adminSelectedCount">0</span>)</button>
       <button id="refreshHiddenRulesBtn" title="Reload the current admin-hidden list from Supabase.">Refresh hidden list</button>
+      <button id="clearHiddenRulesBtn" class="danger" title="Remove all admin-hidden rules. Regular users can see those listings again after refresh/sync.">Clear hidden rules</button>
     </div>
     <div id="adminSelectedPreview" class="muted column-filter-help">Select dashboard rows to queue them here for admin hide.</div>
     <div class="muted column-filter-help">Admin-hidden listings are only hidden inside regular users' dashboards. They are not changed on Nellis.</div>
@@ -85,6 +86,7 @@
       <button id="clearActiveFiltersBtn" title="Clear the currently active dashboard filters and reset sorting.">Clear active filters</button>
     </div>
     <div class="muted column-filter-help">Saved filters include search text, quality, tags, condition ratings, standalone/grouped column filters, and current sort.</div>
+    <div id="savedFilterSyncStatus" class="muted column-filter-help">Saved views sync after sign-in.</div>
   </section>
 
 

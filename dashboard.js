@@ -9,6 +9,7 @@ let conditionMode = 'all';
 let columnFilters = [];
 let columnFilterGroups = [];
 let savedFilters = [];
+let savedFilterSyncStatus = 'Saved views sync after sign-in.';
 let dailyQueryImport = { text: '', terms: [], filterName: 'Daily searches', updatedAt: '' };
 let selectedRowKeys = new Set();
 let lastSelectedRowKey = '';
@@ -434,6 +435,7 @@ async function saveSavedFilters() {
     .sort((a, b) => String(a.name).localeCompare(String(b.name)));
   await chrome.storage.local.set({ [C.STORAGE_KEYS.SAVED_FILTERS]: savedFilters });
   renderSavedFilters();
+  syncSavedFiltersToDb(savedFilters).catch(err => setSavedFilterSyncStatus(`Saved views stayed local: ${err.message || err}`, true));
 }
 
 function renderSavedFilters() {
@@ -449,6 +451,78 @@ function renderSavedFilters() {
 
   const count = document.getElementById('savedFilterCount');
   if (count) count.textContent = String(savedFilters.length);
+  setSavedFilterSyncStatus(savedFilterSyncStatus, /local|failed|error/i.test(savedFilterSyncStatus));
+}
+
+function setSavedFilterSyncStatus(message, isError = false) {
+  savedFilterSyncStatus = message || '';
+  const host = document.getElementById('savedFilterSyncStatus');
+  if (!host) return;
+  host.textContent = savedFilterSyncStatus;
+  host.classList.toggle('warn', !!isError);
+}
+
+function savedFilterUpdatedMs(filter) {
+  return Date.parse(filter?.updatedAt || filter?.createdAt || '') || 0;
+}
+
+function mergeSavedFilters(localFilters = [], remoteFilters = []) {
+  const byName = new Map();
+  for (const filter of [...localFilters, ...remoteFilters]) {
+    if (!filter?.name || !filter?.state) continue;
+    const key = String(filter.name).trim().toLowerCase();
+    const existing = byName.get(key);
+    if (!existing || savedFilterUpdatedMs(filter) >= savedFilterUpdatedMs(existing)) {
+      byName.set(key, {
+        ...existing,
+        ...filter,
+        remoteId: filter.remoteId || existing?.remoteId || '',
+        id: filter.id || existing?.id || `filter-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
+      });
+    } else if (filter.remoteId && !existing.remoteId) {
+      existing.remoteId = filter.remoteId;
+    }
+  }
+  return Array.from(byName.values()).sort((a, b) => String(a.name).localeCompare(String(b.name)));
+}
+
+async function loadSavedFiltersFromDb(silent = true) {
+  if (!C.teamListSavedViews) return false;
+  try {
+    const remote = await C.teamListSavedViews();
+    savedFilters = mergeSavedFilters(savedFilters, remote);
+    await chrome.storage.local.set({ [C.STORAGE_KEYS.SAVED_FILTERS]: savedFilters });
+    renderSavedFilters();
+    setSavedFilterSyncStatus(`Saved views synced from Supabase (${savedFilters.length}).`);
+    return true;
+  } catch (err) {
+    if (!silent) setSavedFilterSyncStatus(`Saved view sync failed: ${err.message || err}`, true);
+    else if (/sign in|signed in/i.test(String(err.message || err))) setSavedFilterSyncStatus('Saved views are local until sign-in.', true);
+    else setSavedFilterSyncStatus('Saved views are local until Supabase saved-view table is available.', true);
+    return false;
+  }
+}
+
+async function syncSavedFiltersToDb(filters = savedFilters) {
+  if (!C.teamUpsertSavedView) return false;
+  const list = (filters || []).filter(f => f?.name && f?.state);
+  if (!list.length) {
+    setSavedFilterSyncStatus('No saved views to sync.');
+    return true;
+  }
+  let changed = false;
+  for (const filter of list) {
+    const saved = await C.teamUpsertSavedView(filter);
+    const local = savedFilters.find(f => f.name.toLowerCase() === filter.name.toLowerCase());
+    if (local && saved?.remoteId) {
+      local.remoteId = saved.remoteId;
+      local.updatedAt = saved.updatedAt || local.updatedAt;
+      changed = true;
+    }
+  }
+  if (changed) await chrome.storage.local.set({ [C.STORAGE_KEYS.SAVED_FILTERS]: savedFilters });
+  setSavedFilterSyncStatus(`Saved views synced to Supabase (${list.length}).`);
+  return true;
 }
 
 function decodeHtmlText(value) {
@@ -670,6 +744,9 @@ async function deleteSelectedSavedFilter() {
   const preset = savedFilters.find(f => f.id === id);
   if (!preset) return;
   if (!confirm(`Delete saved filter "${preset.name}"?`)) return;
+  if (C.teamDeleteSavedView) {
+    C.teamDeleteSavedView(preset).catch(err => setSavedFilterSyncStatus(`Saved view delete stayed local: ${err.message || err}`, true));
+  }
   savedFilters = savedFilters.filter(f => f.id !== id);
   await saveSavedFilters();
 }
@@ -1182,6 +1259,7 @@ async function refresh() {
   renderCurrentAuctionStatus();
   render();
   refreshTeamSyncStatus();
+  loadSavedFiltersFromDb(true);
 }
 
 function defaultDirFor(key) {
@@ -1448,6 +1526,19 @@ async function refreshAdminHiddenRules(showStatus = false, force = false) {
   } finally {
     adminHiddenRulesBusy = false;
     renderAdminHiddenRules();
+  }
+}
+
+async function clearAdminHiddenRulesFromDashboard() {
+  if (!confirm('Clear all admin-hidden rules? Regular users can see those listings again after refresh/sync.')) return;
+  try {
+    setTeamSyncStatus('Clearing hidden rules...');
+    const result = await C.teamClearHiddenRules();
+    adminHiddenRules = [];
+    renderAdminHiddenRules();
+    setTeamSyncStatus(`Cleared hidden rules. Touched ${Number(result?.touched || 0).toLocaleString()} listing(s) for sync reconciliation.`);
+  } catch (err) {
+    setTeamSyncStatus(`Clear hidden rules failed: ${err.message || err}`, true);
   }
 }
 
@@ -1820,6 +1911,7 @@ document.getElementById('teamSyncDashBtn')?.addEventListener('click', teamSyncFr
 document.getElementById('teamAutoSyncNowBtn')?.addEventListener('click', teamAutoSyncNowFromDashboard);
 document.getElementById('teamAdminHideSelectedBtn')?.addEventListener('click', teamAdminHideSelectedFromDashboard);
 document.getElementById('refreshHiddenRulesBtn')?.addEventListener('click', () => refreshAdminHiddenRules(true, true));
+document.getElementById('clearHiddenRulesBtn')?.addEventListener('click', clearAdminHiddenRulesFromDashboard);
 document.getElementById('refreshAdminOverviewBtn')?.addEventListener('click', () => refreshAdminOverview(true));
 document.getElementById('adminHiddenRules')?.addEventListener('click', async e => {
   const button = e.target.closest('[data-action="admin-unhide"]');

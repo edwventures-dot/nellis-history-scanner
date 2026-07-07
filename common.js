@@ -19,8 +19,11 @@
     INTERNAL_BACKUPS: 'internalBackups'
   };
 
-  const APP_VERSION = '4.1.1';
+  const APP_VERSION = '4.2.0';
   const BACKUP_FORMAT_VERSION = 1;
+  const HIDDEN_RULE_TTL_HOURS = 24;
+  const HIDDEN_RULE_TTL_MS = HIDDEN_RULE_TTL_HOURS * 60 * 60 * 1000;
+  const SAVED_VIEW_APP = 'extension-dashboard';
 
   const DEFAULT_SETTINGS = {
     speedMode: 'normal',
@@ -487,7 +490,9 @@
     return '';
   }
 
-  function buildAuctionGroupKey(locationValue, closesValue, closesIsoValue = '') {
+  function buildAuctionGroupKey(locationValue, closesValue, closesIsoValue = '', eventNameValue = '') {
+    const eventName = displayText(eventNameValue);
+    if (eventName) return `event|${normalizeText(eventName).replace(/\s+/g, '-')}`;
     const loc = normalizeText(locationValue).replace(/\s+/g, '-');
     const rawClose = displayText(closesValue);
     const iso = displayText(closesIsoValue) || parseAuctionCloseToIso(rawClose);
@@ -617,6 +622,8 @@
     const raw = row.raw_payload && typeof row.raw_payload === 'object' ? row.raw_payload : {};
     const tags = Array.isArray(row.tags) && row.tags.length ? row.tags.join('; ') : 'New';
     const rating = row.condition_rating === null || row.condition_rating === undefined ? null : Number(row.condition_rating);
+    const auctionEventName = row.auction_event_name || raw.auctionEventName || raw.eventName || '';
+    const eventGroupKey = auctionEventName ? buildAuctionGroupKey(row.auction_location || raw.auctionLocation || raw.locationName || '', row.auction_closes_raw || raw.auctionClosesRaw || '', row.auction_closes_at || raw.auctionClosesAt || '', auctionEventName) : '';
     return {
       ...raw,
       teamListingId: row.id,
@@ -630,11 +637,12 @@
       conditionRating: Number.isFinite(rating) ? rating : null,
       itemCondition: Number.isFinite(rating) ? `${rating}/5` : (raw.itemCondition || ''),
       itemTags: tags,
+      auctionEventName,
       locationName: row.auction_location || raw.auctionLocation || raw.locationName || '',
       auctionLocation: row.auction_location || raw.auctionLocation || raw.locationName || '',
       auctionClosesRaw: row.auction_closes_raw || raw.auctionClosesRaw || '',
       auctionClosesAt: row.auction_closes_at || raw.auctionClosesAt || '',
-      auctionGroupKey: row.auction_group_key || raw.auctionGroupKey || buildAuctionGroupKey(row.auction_location || raw.auctionLocation || raw.locationName || '', row.auction_closes_raw || raw.auctionClosesRaw || '', row.auction_closes_at || raw.auctionClosesAt || ''),
+      auctionGroupKey: eventGroupKey || row.auction_group_key || raw.auctionGroupKey || buildAuctionGroupKey(row.auction_location || raw.auctionLocation || raw.locationName || '', row.auction_closes_raw || raw.auctionClosesRaw || '', row.auction_closes_at || raw.auctionClosesAt || ''),
       userBidStatus: row.bid_status || raw.userBidStatus || '',
       hasUserBid: !!(row.bid_status || raw.hasUserBid),
       firstFoundAt: row.first_seen_at || raw.firstFoundAt || raw.foundAt || '',
@@ -657,7 +665,10 @@
     const auctionLocation = displayText(row.auctionLocation || row.locationName || '');
     const auctionClosesRaw = displayText(row.auctionClosesRaw || '');
     const auctionClosesAt = displayText(row.auctionClosesAt || parseAuctionCloseToIso(auctionClosesRaw));
-    const auctionGroupKey = displayText(row.auctionGroupKey || buildAuctionGroupKey(auctionLocation, auctionClosesRaw, auctionClosesAt));
+    const auctionEventName = displayText(row.auctionEventName || row.eventName || '');
+    const auctionGroupKey = auctionEventName
+      ? buildAuctionGroupKey(auctionLocation, auctionClosesRaw, auctionClosesAt, auctionEventName)
+      : displayText(row.auctionGroupKey || buildAuctionGroupKey(auctionLocation, auctionClosesRaw, auctionClosesAt));
     return {
       nellis_item_id: row.nellisItemId || teamItemIdFromUrl(url) || null,
       url,
@@ -701,11 +712,15 @@
   const auctionLocation = displayText(row.auctionLocation || row.locationName || '');
   const auctionClosesRaw = displayText(row.auctionClosesRaw || '');
   const auctionClosesAt = displayText(row.auctionClosesAt || parseAuctionCloseToIso(auctionClosesRaw));
-  const auctionGroupKey = displayText(row.auctionGroupKey || buildAuctionGroupKey(auctionLocation, auctionClosesRaw, auctionClosesAt));
+  const auctionEventName = displayText(row.auctionEventName || row.eventName || '');
+  const auctionGroupKey = auctionEventName
+    ? buildAuctionGroupKey(auctionLocation, auctionClosesRaw, auctionClosesAt, auctionEventName)
+    : displayText(row.auctionGroupKey || buildAuctionGroupKey(auctionLocation, auctionClosesRaw, auctionClosesAt));
   if (auctionLocation) patch.auction_location = auctionLocation;
   if (auctionClosesRaw) patch.auction_closes_raw = auctionClosesRaw;
   if (auctionClosesAt) patch.auction_closes_at = auctionClosesAt;
   if (auctionGroupKey) patch.auction_group_key = auctionGroupKey;
+  if (auctionEventName) patch.raw_payload = row || {};
 
   return patch;
 }
@@ -728,7 +743,10 @@
       Number(row && row.estRetail || 0).toFixed(2),
       row && row.conditionRating === null ? '' : String((row && row.conditionRating) ?? ''),
       teamTagsArray(row && row.itemTags).join(';'),
-      displayText(row && (row.auctionGroupKey || buildAuctionGroupKey(row.auctionLocation || row.locationName || '', row.auctionClosesRaw || '', row.auctionClosesAt || '')))
+      displayText(row && (row.auctionEventName || '')),
+      displayText(row && (row.auctionEventName
+        ? buildAuctionGroupKey(row.auctionLocation || row.locationName || '', row.auctionClosesRaw || '', row.auctionClosesAt || '', row.auctionEventName || '')
+        : (row.auctionGroupKey || buildAuctionGroupKey(row.auctionLocation || row.locationName || '', row.auctionClosesRaw || '', row.auctionClosesAt || ''))))
     ].join('|');
   }
 
@@ -760,10 +778,13 @@
   function teamAuctionCandidateFromRows(rows) {
     const counts = new Map();
     for (const row of rows || []) {
-      const key = displayText(row && (row.auctionGroupKey || buildAuctionGroupKey(row.auctionLocation || row.locationName || '', row.auctionClosesRaw || '', row.auctionClosesAt || '')));
+      const key = displayText(row && (row.auctionEventName
+        ? buildAuctionGroupKey(row.auctionLocation || row.locationName || '', row.auctionClosesRaw || '', row.auctionClosesAt || '', row.auctionEventName || '')
+        : (row.auctionGroupKey || buildAuctionGroupKey(row.auctionLocation || row.locationName || '', row.auctionClosesRaw || '', row.auctionClosesAt || ''))));
       if (!key) continue;
-      const existing = counts.get(key) || { groupKey: key, count: 0, location: '', closesRaw: '', closesAt: '', sampleTitle: '' };
+      const existing = counts.get(key) || { groupKey: key, count: 0, eventName: '', location: '', closesRaw: '', closesAt: '', sampleTitle: '' };
       existing.count++;
+      existing.eventName = existing.eventName || displayText(row.auctionEventName || '');
       existing.location = existing.location || displayText(row.auctionLocation || row.locationName || '');
       existing.closesRaw = existing.closesRaw || displayText(row.auctionClosesRaw || '');
       existing.closesAt = existing.closesAt || displayText(row.auctionClosesAt || parseAuctionCloseToIso(existing.closesRaw));
@@ -814,8 +835,9 @@
   }
 
   async function teamLatestAuctionFromServer() {
-    const rows = await teamRequest('/rest/v1/nhs_listings?select=auction_group_key,auction_location,auction_closes_raw,auction_closes_at,last_seen_at,title&order=last_seen_at.desc&limit=75');
+    const rows = await teamRequest('/rest/v1/nhs_listings?select=auction_group_key,auction_location,auction_closes_raw,auction_closes_at,last_seen_at,title,raw_payload&order=last_seen_at.desc&limit=75');
     const candidate = teamAuctionCandidateFromRows((Array.isArray(rows) ? rows : []).map(r => ({
+      auctionEventName: r.raw_payload?.auctionEventName || r.raw_payload?.eventName || '',
       auctionGroupKey: r.auction_group_key,
       auctionLocation: r.auction_location,
       auctionClosesRaw: r.auction_closes_raw,
@@ -1002,11 +1024,12 @@
       teamSource: old.teamSource || row.teamSource,
       currentPrice: Number(row.currentPrice || 0),
       bids: Number(row.bids || 0),
+      auctionEventName: row.auctionEventName || old.auctionEventName || '',
       locationName: old.locationName || row.locationName || '',
       auctionLocation: old.auctionLocation || row.auctionLocation || row.locationName || '',
       auctionClosesRaw: old.auctionClosesRaw || row.auctionClosesRaw || '',
       auctionClosesAt: old.auctionClosesAt || row.auctionClosesAt || '',
-      auctionGroupKey: old.auctionGroupKey || row.auctionGroupKey || '',
+      auctionGroupKey: row.auctionGroupKey || old.auctionGroupKey || '',
       lastSeenAt: row.lastSeenAt || old.lastSeenAt,
       lastModifiedAt: row.lastModifiedAt || old.lastModifiedAt
     };
@@ -1129,8 +1152,13 @@
   async function teamListHiddenRules(limit = 500) {
     const profile = await teamLoadProfile(false);
     if (profile?.role !== 'admin') return [];
+    const cutoffIso = new Date(Date.now() - HIDDEN_RULE_TTL_MS).toISOString();
+    await teamRequest(`/rest/v1/nhs_admin_hidden_rules?hidden_at=lt.${encodeURIComponent(cutoffIso)}`, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' }
+    }).catch(() => {});
     const maxRows = Math.max(1, Math.min(1000, Number(limit || 500)));
-    const rows = await teamRequest(`/rest/v1/nhs_admin_hidden_rules?select=*&order=hidden_at.desc&limit=${maxRows}`);
+    const rows = await teamRequest(`/rest/v1/nhs_admin_hidden_rules?select=*&hidden_at=gte.${encodeURIComponent(cutoffIso)}&order=hidden_at.desc&limit=${maxRows}`);
     return Array.isArray(rows) ? rows : [];
   }
 
@@ -1168,6 +1196,94 @@
     });
     const touched = rule ? await teamTouchListingsForRule(rule).catch(() => 0) : 0;
     return { unhidden: true, touched };
+  }
+
+  async function teamClearHiddenRules() {
+    const profile = await teamLoadProfile(true);
+    if (profile?.role !== 'admin') throw new Error('Only admin users can clear hidden rules.');
+    const existing = await teamListHiddenRules(1000).catch(() => []);
+    await teamRequest('/rest/v1/nhs_admin_hidden_rules?id=not.is.null', {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' }
+    });
+    let touched = 0;
+    for (const rule of existing.slice(0, 200)) {
+      touched += await teamTouchListingsForRule(rule).catch(() => 0);
+    }
+    return { cleared: existing.length, touched };
+  }
+
+  function teamSavedViewToFilter(row) {
+    const payload = row?.payload && typeof row.payload === 'object' ? row.payload : {};
+    const state = payload.state && typeof payload.state === 'object' ? payload.state : payload;
+    return {
+      id: payload.localId || row.id,
+      remoteId: row.id,
+      name: row.name || payload.name || 'Saved view',
+      state: state || {},
+      createdAt: payload.createdAt || row.created_at || '',
+      updatedAt: row.updated_at || payload.updatedAt || row.created_at || '',
+      source: payload.source || 'supabase-saved-view'
+    };
+  }
+
+  async function teamListSavedViews(app = SAVED_VIEW_APP) {
+    const session = await teamGetSession();
+    if (!session?.user?.id) throw new Error('Sign in to sync saved views.');
+    const uid = encodeURIComponent(session.user.id);
+    const appKey = encodeURIComponent(app || SAVED_VIEW_APP);
+    const rows = await teamRequest(`/rest/v1/nhs_saved_views?select=id,name,payload,created_at,updated_at&user_id=eq.${uid}&app=eq.${appKey}&order=name.asc`);
+    return (Array.isArray(rows) ? rows : []).map(teamSavedViewToFilter);
+  }
+
+  async function teamUpsertSavedView(filter, app = SAVED_VIEW_APP) {
+    const session = await teamGetSession();
+    if (!session?.user?.id) throw new Error('Sign in to sync saved views.');
+    const now = teamNowIso();
+    const name = displayText(filter?.name);
+    if (!name) throw new Error('Saved view needs a name.');
+    const body = {
+      user_id: session.user.id,
+      app: app || SAVED_VIEW_APP,
+      name,
+      payload: {
+        localId: filter.id || '',
+        name,
+        state: filter.state || {},
+        source: filter.source || 'extension-dashboard',
+        createdAt: filter.createdAt || now,
+        updatedAt: now
+      },
+      updated_at: now
+    };
+    const rows = await teamRequest('/rest/v1/nhs_saved_views?on_conflict=user_id,app,name', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=representation' },
+      body
+    });
+    const saved = Array.isArray(rows) ? rows[0] : rows;
+    return saved ? teamSavedViewToFilter(saved) : { ...filter, updatedAt: now };
+  }
+
+  async function teamDeleteSavedView(filterOrId, app = SAVED_VIEW_APP) {
+    const session = await teamGetSession();
+    if (!session?.user?.id) throw new Error('Sign in to sync saved views.');
+    const uid = encodeURIComponent(session.user.id);
+    const appKey = encodeURIComponent(app || SAVED_VIEW_APP);
+    const item = typeof filterOrId === 'object' && filterOrId ? filterOrId : { id: String(filterOrId || '') };
+    let filter = '';
+    if (item.remoteId || /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(item.id || '')) {
+      filter = `id=eq.${encodeURIComponent(item.remoteId || item.id)}`;
+    } else if (item.name) {
+      filter = `name=eq.${encodeURIComponent(item.name)}`;
+    } else {
+      return { deleted: false };
+    }
+    await teamRequest(`/rest/v1/nhs_saved_views?user_id=eq.${uid}&app=eq.${appKey}&${filter}`, {
+      method: 'DELETE',
+      headers: { Prefer: 'return=minimal' }
+    });
+    return { deleted: true };
   }
 
 
@@ -1317,6 +1433,7 @@
     STORAGE_KEYS,
     APP_VERSION,
     BACKUP_FORMAT_VERSION,
+    HIDDEN_RULE_TTL_HOURS,
     DEFAULT_SETTINGS,
     normalizeText,
     displayText,
@@ -1363,6 +1480,10 @@
     teamHideListings,
     teamListHiddenRules,
     teamUnhideRule,
+    teamClearHiddenRules,
+    teamListSavedViews,
+    teamUpsertSavedView,
+    teamDeleteSavedView,
     teamAdminOverview,
     teamReadCurrentAuction,
     teamResolveCurrentAuction,
