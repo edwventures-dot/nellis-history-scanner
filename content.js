@@ -98,7 +98,7 @@
 
   function attributeTextOf(node) {
     const root = node || document;
-    const attrs = ['aria-label', 'title', 'alt', 'datetime', 'data-testid', 'data-test-id', 'data-auction-id', 'data-auction', 'data-location', 'data-pickup-location', 'data-close', 'data-closes', 'data-closes-at', 'data-ending-at'];
+    const attrs = ['aria-label', 'title', 'alt', 'datetime', 'data-testid', 'data-test-id', 'data-auction-id', 'data-auction', 'data-event', 'data-event-name', 'data-location', 'data-pickup-location', 'data-close', 'data-closes', 'data-closes-at', 'data-ending-at'];
     const out = [];
     const nodes = Array.from(root.querySelectorAll ? root.querySelectorAll('*') : []).slice(0, 260);
     for (const el of nodes) {
@@ -109,7 +109,7 @@
       if (el.dataset) {
         for (const [key, value] of Object.entries(el.dataset)) {
           if (!value || String(value).length > 180) continue;
-          if (/auction|pickup|location|close|closing|end|time/i.test(key)) out.push(value);
+          if (/auction|event|pickup|location|close|closing|end|time/i.test(key)) out.push(value);
         }
       }
     }
@@ -130,7 +130,7 @@
   function cleanAuctionPart(value) {
     return C.displayText(value)
       .replace(/^[:\-–—|]+\s*/, '')
-      .replace(/^(pickup\s+location|pickup|auction\s+location|location|warehouse|facility|site|auction\s+closes|closes\s+at|closes|closing|close\s+date|close\s+time|ends\s+at|ends|ending|time\s+left)\b\s*[:\-–—]?\s*/i, '')
+      .replace(/^(event\s+name|event|pickup\s+location|pickup|auction\s+location|location|warehouse|facility|site|auction\s+closes|closes\s+at|closes|closing|close\s+date|close\s+time|ends\s+at|ends|ending|time\s+left)\b\s*[:\-–—]?\s*/i, '')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -147,7 +147,97 @@
     if (!v || v.length < 2 || v.length > 90) return true;
     if (/^\$|^\d+\s*bids?\b|buyer premium|estimated retail|current (?:bid|price)|watchlist|star rating/i.test(v)) return true;
     if (/^(new|used|open box|major damage|minor damage|appears new|condition)$/i.test(v)) return true;
+    if (looksLikeListingTitleValue(v)) return true;
     return false;
+  }
+
+  function looksLikeListingTitleValue(value) {
+    const v = C.displayText(value);
+    if (!v || v.length < 28) return false;
+    if (/[,$]/.test(v) && /\b(?:with|for|pack|set|inch|foot|feet|ft|mount|helmet|bike|skateboard|barrier|belt|mens?|womens?|kids?|youth)\b/i.test(v)) return true;
+    if (/\b(?:with|for)\b/i.test(v) && v.length > 40) return true;
+    if (/[A-Z]{2,}\d|(?:\/|,)\s*[A-Z]/.test(v) && v.length > 36) return true;
+    return false;
+  }
+
+  function looksLikeEventName(value) {
+    const v = C.displayText(value);
+    if (!v || v.length < 8 || v.length > 140) return false;
+    if (!/-/.test(v)) return false;
+    return /\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?\b/i.test(v)
+      || /\bauction\b/i.test(v);
+  }
+
+  function eventLocationFromName(value) {
+    const parts = C.displayText(value).split(/\s+-\s+/).map(x => C.displayText(x)).filter(Boolean);
+    if (parts.length < 3) return '';
+    const last = parts[parts.length - 1];
+    if (!/\b(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?\b/i.test(last)) return '';
+    return parts[parts.length - 2] || '';
+  }
+
+  function eventNameCandidates(value) {
+    const text = C.displayText(value);
+    if (!text) return [];
+    const month = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t|tember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+    const eventRe = new RegExp(`([A-Z][A-Za-z0-9 &'()/]+?\\s*-\\s*[A-Za-z0-9 &'()/]+?\\s*-\\s*${month}\\.?\\s+\\d{1,2}(?:st|nd|rd|th)?)`, 'ig');
+    const matches = Array.from(text.matchAll(eventRe)).map(match => C.displayText(match[1])).filter(looksLikeEventName);
+    if (matches.length) return Array.from(new Set(matches.map(name => C.displayText(name))));
+    return looksLikeEventName(text) ? [text] : [];
+  }
+
+  let pageEventCache = null;
+  function extractPageEventNames() {
+    if (pageEventCache) return pageEventCache;
+    const raw = String(document.body?.innerText || '');
+    const blockMatch = raw.match(/\bEvent Name\b([\s\S]{0,1800}?)(?=\bEvent Type\b|\bAdult Content\b|\bBrand\b|\bCategory\b|$)/i);
+    const block = blockMatch ? blockMatch[1] : raw.slice(0, 3000);
+    const seen = new Set();
+    const events = [];
+
+    const addEvent = (name) => {
+      const clean = C.displayText(name);
+      const key = C.normalizeText(clean);
+      if (!looksLikeEventName(clean) || seen.has(key)) return;
+      seen.add(key);
+      events.push({ name: clean, location: eventLocationFromName(clean) });
+    };
+
+    const lines = block
+      .split(/\n+/)
+      .map(line => C.displayText(line).replace(/\s+\d+\s*$/, '').trim())
+      .filter(line => line && !/^\d+$/.test(line));
+
+    for (let i = 0; i < lines.length; i++) {
+      let joined = '';
+      for (let j = i; j < Math.min(lines.length, i + 3); j++) {
+        joined = C.displayText(`${joined} ${lines[j]}`);
+        const candidates = eventNameCandidates(joined);
+        if (candidates.length) {
+          candidates.forEach(addEvent);
+          i = j;
+          break;
+        }
+      }
+    }
+
+    eventNameCandidates(block.replace(/\n+/g, ' ')).forEach(addEvent);
+    pageEventCache = events;
+    return events;
+  }
+
+  function findPageEventForLocation(locationValue) {
+    const events = extractPageEventNames();
+    if (!events.length) return '';
+    const loc = C.normalizeText(locationValue);
+    if (loc) {
+      const matches = events.filter(event => {
+        const eventLoc = C.normalizeText(event.location);
+        return eventLoc && (eventLoc === loc || eventLoc.includes(loc) || loc.includes(eventLoc));
+      });
+      if (matches.length === 1) return matches[0].name;
+    }
+    return events.length === 1 ? events[0].name : '';
   }
 
   function findLabelValueFromLines(lines, labelRe, valueLooksUseful) {
@@ -271,6 +361,28 @@
     if (!auctionLocation) auctionLocation = findLocationFromPageUrl();
     if (looksLikeBadAuctionValue(auctionLocation) || looksLikeCloseValue(auctionLocation)) auctionLocation = '';
 
+    let auctionEventName = parseTextAfterLabel(card, [
+      'Event Name', 'Event'
+    ], {
+      stop: /^\*?\s*(current|estimated|est\.?|retail|bids?|buyer|premium|location|pickup|closes?|closing|ends?|condition|watchlist|event\s+type)\b/i,
+      maxWords: 20
+    });
+
+    if (!auctionEventName || !looksLikeEventName(auctionEventName)) {
+      const eventValue = findLabelValueFromLines(
+        lines,
+        /^\*?\s*(?:event\s+name|event)\b\s*[:\-–—]?\s*/i,
+        looksLikeEventName
+      );
+      if (eventValue) auctionEventName = eventValue;
+    }
+
+    if (!auctionEventName || !looksLikeEventName(auctionEventName)) {
+      auctionEventName = findPageEventForLocation(auctionLocation);
+    }
+
+    if (!looksLikeEventName(auctionEventName)) auctionEventName = '';
+
     let auctionClosesRaw = parseTextAfterLabel(card, [
       'Auction Closes', 'Closes At', 'Closes', 'Closing', 'Close Date', 'Close Time', 'Ends At', 'Ends', 'Ending', 'Time Left'
     ], {
@@ -299,8 +411,8 @@
 
     if (!looksLikeCloseValue(auctionClosesRaw)) auctionClosesRaw = '';
     const auctionClosesAt = C.parseAuctionCloseToIso ? C.parseAuctionCloseToIso(auctionClosesRaw) : '';
-    const auctionGroupKey = C.buildAuctionGroupKey ? C.buildAuctionGroupKey(auctionLocation, auctionClosesRaw, auctionClosesAt) : '';
-    return { auctionLocation, locationName: auctionLocation, auctionClosesRaw, auctionClosesAt, auctionGroupKey };
+    const auctionGroupKey = C.buildAuctionGroupKey ? C.buildAuctionGroupKey(auctionLocation, auctionClosesRaw, auctionClosesAt, auctionEventName) : '';
+    return { auctionEventName, auctionLocation, locationName: auctionLocation, auctionClosesRaw, auctionClosesAt, auctionGroupKey };
   }
 
   function getImageUrl(card, title = '') {
@@ -599,6 +711,7 @@
       estRetail,
       bids,
       locationName,
+      auctionEventName: auctionIdentity.auctionEventName || '',
       auctionLocation: auctionIdentity.auctionLocation || '',
       auctionClosesRaw: auctionIdentity.auctionClosesRaw || '',
       auctionClosesAt: auctionIdentity.auctionClosesAt || '',

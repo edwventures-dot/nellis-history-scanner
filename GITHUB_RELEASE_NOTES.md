@@ -11,7 +11,7 @@ Use GitHub Releases for downloadable extension zips.
 
 3. Create a GitHub release tag that matches the manifest version, for example:
 
-   v4.1.0
+   v4.1.3
 
 4. Attach `nellis-history-scanner.zip` to the release.
 
