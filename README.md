@@ -1,3 +1,8 @@
+# Nellis History Scanner v4.2.1
+
+- Enlarges dashboard listing thumbnails to 176px.
+- Uses contained product images instead of cropped thumbnails in the dashboard table.
+
 # Nellis History Scanner v4.2.0
 
 - Stores dashboard saved filters/views in Supabase when `nhs_saved_views` exists.

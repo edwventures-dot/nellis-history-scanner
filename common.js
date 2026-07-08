@@ -19,7 +19,7 @@
     INTERNAL_BACKUPS: 'internalBackups'
   };
 
-  const APP_VERSION = '4.2.0';
+  const APP_VERSION = '4.2.1';
   const BACKUP_FORMAT_VERSION = 1;
   const HIDDEN_RULE_TTL_HOURS = 24;
   const HIDDEN_RULE_TTL_MS = HIDDEN_RULE_TTL_HOURS * 60 * 60 * 1000;
