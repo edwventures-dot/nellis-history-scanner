@@ -2,6 +2,7 @@
 
 - Enlarges dashboard listing thumbnails to 176px.
 - Uses contained product images instead of cropped thumbnails in the dashboard table.
+- If Supabase says `permission denied for table nhs_app_bugs`, run `supabase_bug_table_grants_v421.sql`.
 
 # Nellis History Scanner v4.2.0
 

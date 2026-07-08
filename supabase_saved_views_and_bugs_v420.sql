@@ -50,6 +50,10 @@ for each row execute function public.nhs_set_updated_at();
 alter table public.nhs_saved_views enable row level security;
 alter table public.nhs_app_bugs enable row level security;
 
+grant usage on schema public to authenticated;
+grant select, insert, update, delete on table public.nhs_saved_views to authenticated;
+grant select, insert, update, delete on table public.nhs_app_bugs to authenticated;
+
 drop policy if exists "saved views read own" on public.nhs_saved_views;
 create policy "saved views read own"
 on public.nhs_saved_views
